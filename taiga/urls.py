@@ -70,3 +70,49 @@ if settings.DEBUG:
     # Hardcoded only for development server
     urlpatterns += staticfiles_urlpatterns(prefix="/static/")
     urlpatterns += mediafiles_urlpatterns(prefix="/media/")
+
+##############################################
+# Donwnload all attachments as ZIP-archive
+##############################################
+
+if settings.ZIP_ATTACHMENTS:
+    from zipfile import ZipFile
+    # from django.http import HttpResponseNotFound, HttpResponseBadRequest
+    from django.http import HttpResponse, JsonResponse
+    from .projects.attachments.models import Attachment
+
+    def zip_attachments(request):
+
+        project_id = request.GET.get("project", False)
+        object_id = request.GET.get("object_id", False)
+
+        if not project_id or not object_id:
+            # return HttpResponseBadRequest()
+            return JsonResponse({ "status": 400, "error_message": "Bad Request" })
+
+        attachments = [ { "name": it.name, "path": it.attached_file.path }
+            for it in Attachment.objects.filter(project__id=project_id, object_id=object_id)
+        ]
+        if not attachments:
+            # return HttpResponseNotFound()
+            return JsonResponse({ "status": 404, "error_message": "Not Found" })
+
+        archive_name = "attachments.zip"
+        archive_path = "/tmp/attachments.zip"
+
+        with ZipFile(archive_path, "w") as z:
+            for attachment in attachments:
+                z.write(attachment["path"], attachment["name"])
+
+        response = HttpResponse()
+        response["Content-Disposition"] = f"attachment; filename=\"{archive_name}\""
+        response["Content-Type"] = "application/zip"
+
+        with open(archive_path, "rb") as f:
+            response.write(f.read())
+
+        return response
+
+    urlpatterns += [
+        path("api/v1/zip_attachments", zip_attachments)
+    ]
